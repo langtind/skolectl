@@ -65,7 +65,7 @@ func (h *harness) login(left time.Duration) string {
 	h.t.Helper()
 	access := accessToken("old", testTime.Add(left))
 	m := session.Manager{Store: h.tokens}
-	err := m.Save(session.Session{AccessToken: access, AccessExpires: testTime.Add(left), RefreshToken: "refresh-1 session-1"})
+	err := m.Save(session.Session{AccessToken: access, AccessExpires: testTime.Add(left), RefreshToken: "refresh-1", Extra: map[string]string{flyt.ExtraSessionID: "session-1"}})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -529,7 +529,7 @@ func TestLoginTakesOverTheBrowsersLogin(t *testing.T) {
 	if code != 0 || stdout != "Logged in as Kari Nordmann at Fjellvik skole. The login is in the system keyring and renews itself.\n" {
 		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}
-	if got := h.stored(); got.AccessToken != renewedAccess || got.RefreshToken != "refresh-9 session-9" || !got.AccessExpires.Equal(testTime.Add(5*time.Minute)) {
+	if got := h.stored(); got.AccessToken != renewedAccess || got.RefreshToken != "refresh-9" || got.Extra[flyt.ExtraSessionID] != "session-9" || !got.AccessExpires.Equal(testTime.Add(5*time.Minute)) {
 		t.Errorf("stored = %+v", got)
 	}
 	if c := h.calls[0]; h.sent() != "GET /v1/session, GET /v1/session" || c.Refresh != "refresh-9" || c.Session != "session-9" || h.calls[1].Refresh != "" {
@@ -548,8 +548,29 @@ func TestALoginTheServiceRefusesStoresNothing(t *testing.T) {
 	if code, _, stderr := h.run(`{"cookies":[]}`, "login", "--state-stdin"); code != 4 || !strings.Contains(stderr, "has no CookieAccessToken cookie") {
 		t.Errorf("no cookies: exit = %d, stderr = %q", code, stderr)
 	}
-	if code, _, stderr := h.run("", "login"); code != 2 || !strings.Contains(stderr, "playwright-cli state-save") {
+	if code, _, stderr := h.run("", "login"); code != 2 || !strings.Contains(stderr, `Run "skolectl help login"`) {
 		t.Errorf("no flag: exit = %d, stderr = %q", code, stderr)
+	}
+}
+
+func TestHelpLoginShowsTheSteps(t *testing.T) {
+	h := newHarness(t)
+	code, stdout, _ := h.run("", "help", "login")
+	if code != 0 || !strings.Contains(stdout, "playwright-cli state-save state.json") || !strings.Contains(stdout, "skolectl login --state-stdin < state.json") {
+		t.Errorf("exit = %d, stdout = %q", code, stdout)
+	}
+}
+
+// A login stored before the session id moved to Extra cannot be renewed.
+func TestAStoredLoginWithoutASessionIDSaysToLogInAgain(t *testing.T) {
+	h := newHarness(t)
+	m := session.Manager{Store: h.tokens}
+	if err := m.Save(session.Session{AccessToken: accessToken("old", testTime.Add(-time.Hour)), AccessExpires: testTime.Add(-time.Hour), RefreshToken: "refresh-1 session-1"}); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := h.run("", "children")
+	if code != 4 || !strings.HasPrefix(stderr, "Error: the login has run out: the stored login has no session id\nHint: a person has to log in with ID-porten") || h.sent() != "" {
+		t.Errorf("exit = %d, stderr = %q, sent = %s", code, stderr, h.sent())
 	}
 }
 
@@ -560,7 +581,7 @@ func TestAnAccessTokenAboutToRunOutIsRenewedFirst(t *testing.T) {
 	if code != 0 || h.sent() != "GET /v1/session, GET /v2/children" || h.calls[0].Refresh != "refresh-1" || h.calls[1].Access != renewedAccess || h.calls[1].Refresh != "" {
 		t.Fatalf("exit = %d, stderr = %q, sent = %s, calls = %+v", code, stderr, h.sent(), h.calls)
 	}
-	if got := h.stored(); got.AccessToken != renewedAccess || got.RefreshToken != "refresh-1 session-1" {
+	if got := h.stored(); got.AccessToken != renewedAccess || got.RefreshToken != "refresh-1" || got.Extra[flyt.ExtraSessionID] != "session-1" {
 		t.Errorf("stored = %+v", got)
 	}
 }
@@ -585,7 +606,7 @@ func TestALoginThatCannotBeRenewedSaysToLogInAgain(t *testing.T) {
 	h.login(-time.Hour)
 	h.answer = func(call) (int, string) { return http.StatusUnauthorized, `` }
 	code, _, stderr := h.run("", "children")
-	if code != 4 || !strings.HasPrefix(stderr, "Error: the login has run out: Visma Flyt Skole: HTTP 401\nHint: a person has to log in with ID-porten") || h.stored().RefreshToken != "refresh-1 session-1" {
+	if code != 4 || !strings.HasPrefix(stderr, "Error: the login has run out: Visma Flyt Skole: HTTP 401\nHint: a person has to log in with ID-porten") || h.stored().RefreshToken != "refresh-1" {
 		t.Errorf("exit = %d, stderr = %q, stored = %+v", code, stderr, h.stored())
 	}
 }

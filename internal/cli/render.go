@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/langtind/ctlkit"
 )
 
 // Output is Markdown, which reads well both in a terminal and when an agent
@@ -82,7 +84,7 @@ func renderThread(w io.Writer, detail threadDetail) {
 		if m.Title != "" {
 			fmt.Fprintf(w, "Title: %s\n\n", oneLine(m.Title))
 		}
-		fmt.Fprintln(w, quote(m.Text))
+		fmt.Fprintln(w, ctlkit.Quote(m.Text))
 		for _, file := range m.Attachments {
 			fmt.Fprintf(w, "\nAttachment: %s (id %s)\n", oneLine(file.FileName), file.ID)
 		}
@@ -91,7 +93,7 @@ func renderThread(w io.Writer, detail threadDetail) {
 
 func renderReply(w io.Writer, result replyResult, detail threadDetail) {
 	if result.DryRun {
-		fmt.Fprintf(w, "Dry run. Would send this to %s. Nothing was sent.\n\n%s\n", threadName(detail), quote(result.Request.Text))
+		fmt.Fprintf(w, "Dry run. Would send this to %s. Nothing was sent.\n\n%s\n", threadName(detail), ctlkit.Quote(result.Request.Text))
 		return
 	}
 	fmt.Fprintf(w, "Sent to %s.\n", threadName(detail))
@@ -136,7 +138,7 @@ func renderNotices(w io.Writer, list noticeList) {
 		}
 		fmt.Fprintf(w, "\n## %s%s\n\n", oneLine(n.Title), unread)
 		fmt.Fprintf(w, "Sent: %s\nFrom: %s\nChild: %s\nKind: %s\n\n", n.SentAt, oneLine(n.Sender), oneLine(n.Child), n.Kind)
-		fmt.Fprintln(w, quote(n.Text))
+		fmt.Fprintln(w, ctlkit.Quote(n.Text))
 	}
 	if list.Truncated {
 		fmt.Fprintln(w, "\nThere are more. Raise --limit to see them.")
@@ -205,10 +207,10 @@ func renderForm(w io.Writer, f formDetail) {
 		fmt.Fprintln(w, "Not answered.")
 	}
 	if f.Text != "" {
-		fmt.Fprintf(w, "\n%s\n", quote(f.Text))
+		fmt.Fprintf(w, "\n%s\n", ctlkit.Quote(f.Text))
 	}
 	if f.MoreInfo != "" {
-		fmt.Fprintf(w, "\n%s\n", quote(f.MoreInfo))
+		fmt.Fprintf(w, "\n%s\n", ctlkit.Quote(f.MoreInfo))
 	}
 	if len(f.Alternatives) > 0 {
 		fmt.Fprintln(w, "\nAlternatives:")
@@ -264,10 +266,10 @@ func renderApplication(w io.Writer, entry application) {
 		}
 	}
 	if entry.Comment != "" {
-		fmt.Fprintf(w, "\nThe guardian wrote:\n\n%s\n", quote(entry.Comment))
+		fmt.Fprintf(w, "\nThe guardian wrote:\n\n%s\n", ctlkit.Quote(entry.Comment))
 	}
 	if entry.Answer != "" {
-		fmt.Fprintf(w, "\nThe school answered:\n\n%s\n", quote(entry.Answer))
+		fmt.Fprintf(w, "\nThe school answered:\n\n%s\n", ctlkit.Quote(entry.Answer))
 	}
 }
 
@@ -334,19 +336,9 @@ func renderDocuments(w io.Writer, list documentList) {
 	}
 }
 
-// quote writes a text from the service as a Markdown quote, so that a line
-// in a message cannot pass for a heading or for structure of the output.
-func quote(text string) string {
-	lines := strings.Split(strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n")), "\n")
-	for i, line := range lines {
-		lines[i] = strings.TrimRight("> "+line, " ")
-	}
-	return strings.Join(lines, "\n")
-}
-
 func (a *App) renderStatus(w io.Writer, status loginStatus) {
 	if !status.LoggedIn {
-		fmt.Fprintf(w, "Not logged in. %s\n", strings.ToUpper(loginSteps[:1])+loginSteps[1:])
+		fmt.Fprintf(w, "Not logged in. %s\n", strings.ToUpper(loginHint[:1])+loginHint[1:])
 		return
 	}
 	fmt.Fprintln(w, "Logged in.")

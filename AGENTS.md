@@ -43,8 +43,8 @@ Before you write the client, read [DISCOVERY.md](https://github.com/langtind/ctl
 - The API is `https://api.foresatt.visma.no`. Every request carries the header `Requested-By: XMLHttpRequest`.
 - The login is three cookies. `CookieAccessToken` is a JWT that lasts five minutes. `GwebId` and `CookieRefreshToken` last for the whole login. A request needs `GwebId` and the access token.
 - There is no renewal request. Any request sent with `GwebId` and `CookieRefreshToken` is answered with a new access token in `Set-Cookie`. The refresh token has not been seen to change. `RenewSession` does this with `GET /v1/session`.
-- `session.Session` has room for two tokens, so the refresh token and `GwebId` are stored together in `RefreshToken`, with a space between them. `flyt.SplitRefresh` takes them apart.
-- A person logs in, with ID-porten in a browser, and `login --state-stdin` reads the cookies out of the saved browser state. The tool cannot log in on its own.
+- The stored `session.Session` holds the access token, the refresh token, and `GwebId` in `Extra` under `flyt.ExtraSessionID`. `session.Manager.RenewFrom` hands the whole stored session to `RenewSession`. A stored login without the session id cannot be renewed, and the user logs in again.
+- A person logs in, with ID-porten in a browser, and `login --state-stdin` reads the cookies out of the saved browser state. The tool cannot log in on its own. The steps are the `Long` help of `login`, and every `auth` error points there.
 - Message times come without a zone and are read as Oslo time (`flyt.LocalTime`).
 - Lists are not paged. The service answers with everything, and `--limit` cuts on this side. Direct threads come in no order, so they are sorted here.
 - The service answers an id it does not know with a 500, and a pupil that is not the guardian's with a 403.

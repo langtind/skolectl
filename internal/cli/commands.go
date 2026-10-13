@@ -20,8 +20,6 @@ const (
 	maxLimit = 500
 )
 
-var outputFlag = ctlkit.Flag{Name: "output", Kind: ctlkit.String, Value: "path", Help: "where to save the file, instead of under its own name in the current directory"}
-
 // commands is the command table, the single description of the command
 // line. Add a command or a flag here and nowhere else.
 func (a *App) commands() []ctlkit.Command {
@@ -29,6 +27,7 @@ func (a *App) commands() []ctlkit.Command {
 		{
 			Name:    "login",
 			Summary: "Store the login a person made in a browser, read from stdin",
+			Long:    loginSteps,
 			Flags: []ctlkit.Flag{
 				{Name: "state-stdin", Kind: ctlkit.Bool, Help: "read the browser storage state from stdin"},
 			},
@@ -107,7 +106,7 @@ func (a *App) commands() []ctlkit.Command {
 				{Name: "thread-id", Required: true, ID: true, Help: "the id, as threads prints it"},
 				{Name: "attachment-id", Required: true, ID: true, Help: "the id, as thread prints it"},
 			},
-			Flags: []ctlkit.Flag{outputFlag, ctlkit.JSONFlag},
+			Flags: []ctlkit.Flag{ctlkit.OutputFlag, ctlkit.JSONFlag},
 			Run:   a.attachment,
 		},
 		{
@@ -189,7 +188,7 @@ func (a *App) commands() []ctlkit.Command {
 			Name:    "document",
 			Summary: "Save one file",
 			Args:    []ctlkit.Arg{{Name: "document-id", Required: true, ID: true, Help: "the id, as documents prints it"}},
-			Flags:   []ctlkit.Flag{outputFlag, ctlkit.JSONFlag},
+			Flags:   []ctlkit.Flag{ctlkit.OutputFlag, ctlkit.JSONFlag},
 			Run:     a.document,
 		},
 	}
@@ -198,9 +197,9 @@ func (a *App) commands() []ctlkit.Command {
 func (a *App) login(ctx context.Context, c *ctlkit.Call) error {
 	if !c.Bool("state-stdin") || c.Interactive() {
 		return ctlkit.Usagef("login takes a browser storage state on stdin, with --state-stdin").
-			WithHint("%s", loginSteps)
+			WithHint("%s", loginHint)
 	}
-	state, err := io.ReadAll(io.LimitReader(c.Program.Stdin, 16<<20))
+	state, err := c.ReadAll()
 	if err != nil {
 		return fmt.Errorf("read the browser state: %w", err)
 	}
@@ -211,9 +210,8 @@ func (a *App) login(ctx context.Context, c *ctlkit.Call) error {
 
 	// Renewing at once proves that the tool can keep the login alive on
 	// its own, and names who it belongs to.
-	a.Client.Token = login.AccessToken
-	_, a.Client.SessionID = flyt.SplitRefresh(login.RefreshToken)
-	renewed, err := a.Client.RenewSession(ctx, login.RefreshToken)
+	a.Client.SessionID = login.Extra[flyt.ExtraSessionID]
+	renewed, err := a.Client.RenewSession(ctx, login)
 	if err != nil {
 		if ctlkit.KindOf(err) == ctlkit.KindAuth {
 			return ctlkit.Authf("Visma Flyt Skole refused the login in the browser state: %w", err).
@@ -221,9 +219,11 @@ func (a *App) login(ctx context.Context, c *ctlkit.Call) error {
 		}
 		return err
 	}
+	// The service has not been seen to hand out a new refresh token.
 	if renewed.RefreshToken == "" {
 		renewed.RefreshToken = login.RefreshToken
 	}
+	renewed.Extra = login.Extra
 	a.Client.Token = renewed.AccessToken
 	guardian, err := a.Client.Me(ctx)
 	if err != nil {
@@ -264,8 +264,7 @@ func (a *App) loginStatus() (loginStatus, error) {
 	if err != nil {
 		return loginStatus{}, err
 	}
-	refresh, _ := flyt.SplitRefresh(login.RefreshToken)
-	status := loginStatus{Renewable: refresh != ""}
+	status := loginStatus{Renewable: login.RefreshToken != "" && login.Extra[flyt.ExtraSessionID] != ""}
 	if !login.AccessExpires.IsZero() {
 		status.AccessExpires = login.AccessExpires.UTC().Format(time.RFC3339)
 	}
@@ -286,7 +285,6 @@ func (a *App) refresh(ctx context.Context, c *ctlkit.Call) error {
 	if err != nil {
 		return loginError(err)
 	}
-	_, a.Client.SessionID = flyt.SplitRefresh(login.RefreshToken)
 	if _, err := a.Session.Refresh(ctx, login.AccessToken); err != nil {
 		return loginError(err)
 	}

@@ -3,13 +3,8 @@ package cli
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -654,13 +649,6 @@ func (a *App) documents(ctx context.Context, c *ctlkit.Call) error {
 	return c.Print(list, func(w io.Writer) { renderDocuments(w, list) })
 }
 
-// saved is what a command that fetches a file prints.
-type saved struct {
-	Path        string `json:"path"`
-	Bytes       int    `json:"bytes"`
-	ContentType string `json:"contentType"`
-}
-
 func (a *App) document(ctx context.Context, c *ctlkit.Call) error {
 	bad := ctlkit.Usagef("%q is not a document id", c.Arg(0)).WithHint(`run "%s documents" to see the ids.`, Name)
 	parts := strings.SplitN(c.Arg(0), ".", 3)
@@ -691,7 +679,7 @@ func (a *App) document(ctx context.Context, c *ctlkit.Call) error {
 	if err != nil {
 		return idError(err, "documents")
 	}
-	return a.save(c, data, "document-"+parts[2])
+	return c.Save(data, "document-"+parts[2])
 }
 
 func (a *App) attachment(ctx context.Context, c *ctlkit.Call) error {
@@ -725,45 +713,7 @@ func (a *App) attachment(ctx context.Context, c *ctlkit.Call) error {
 	if err != nil {
 		return err
 	}
-	return a.save(c, data, name)
-}
-
-// extensions names a file that came without a name, by what it holds.
-var extensions = map[string]string{
-	"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
-	"application/zip": ".zip", "text/plain; charset=utf-8": ".txt",
-}
-
-// save writes a fetched file to --output, or to name in the current
-// directory. A name from the service is cut down to its last element, and a
-// file that exists is never replaced.
-func (a *App) save(c *ctlkit.Call, data []byte, name string) error {
-	contentType := http.DetectContentType(data)
-	path := c.String("output")
-	if path == "" {
-		path = filepath.Base(filepath.Clean("/" + strings.ReplaceAll(name, `\`, "/")))
-		if filepath.Ext(path) == "" {
-			path += extensions[contentType]
-		}
-	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, fs.ErrExist) {
-		return ctlkit.Errorf(ctlkit.KindConflict, "%s exists already", path).WithHint("give another path with --output.")
-	}
-	if err != nil {
-		return err
-	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	result := saved{Path: path, Bytes: len(data), ContentType: contentType}
-	return c.Print(result, func(w io.Writer) {
-		fmt.Fprintf(w, "Saved %s (%d bytes, %s).\n", result.Path, result.Bytes, result.ContentType)
-	})
+	return c.Save(data, name)
 }
 
 // idError tells where the ids come from. The service answers an id it does

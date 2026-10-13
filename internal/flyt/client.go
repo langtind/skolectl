@@ -6,14 +6,10 @@ package flyt
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
 	"net/http"
-	"net/url"
-	"strings"
-	"time"
 
 	"github.com/langtind/ctlkit"
 	"github.com/langtind/ctlkit/httpx"
@@ -49,57 +45,16 @@ func NewClient() *Client {
 	return &Client{HTTP: httpx.NewClient(), BaseURL: "https://" + host}
 }
 
-// A session.Session has room for two tokens and this login has three parts,
-// so the refresh token and the session id are stored together, with a space
-// between them. A cookie value holds no space.
-
-func packRefresh(refresh, sessionID string) string { return refresh + " " + sessionID }
-
-// SplitRefresh takes apart what a stored session holds as its refresh token.
-func SplitRefresh(packed string) (refresh, sessionID string) {
-	refresh, sessionID, _ = strings.Cut(packed, " ")
-	return refresh, sessionID
-}
-
-// tokenExpiry reads when an access token runs out. A token that cannot be
-// read gives the zero time.
-func tokenExpiry(token string) time.Time {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return time.Time{}
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return time.Time{}
-	}
-	var claims struct {
-		Exp int64 `json:"exp"`
-	}
-	if json.Unmarshal(payload, &claims) != nil || claims.Exp == 0 {
-		return time.Time{}
-	}
-	return time.Unix(claims.Exp, 0)
-}
+// ExtraSessionID is where a stored session keeps the session id, in Extra.
+const ExtraSessionID = "sessionId"
 
 // SessionFromBrowser reads a login out of the storage state a browser saved
 // after the user logged in at foresatt.visma.no, as "playwright-cli
 // state-save" writes it.
 func SessionFromBrowser(state []byte) (session.Session, error) {
-	var saved struct {
-		Cookies []struct {
-			Name   string `json:"name"`
-			Value  string `json:"value"`
-			Domain string `json:"domain"`
-		} `json:"cookies"`
-	}
-	if err := json.Unmarshal(state, &saved); err != nil {
-		return session.Session{}, ctlkit.Usagef("stdin does not hold a browser storage state: %v", err)
-	}
-	found := map[string]string{}
-	for _, cookie := range saved.Cookies {
-		if strings.TrimPrefix(cookie.Domain, ".") == host {
-			found[cookie.Name] = cookie.Value
-		}
+	found, err := httpx.BrowserCookies(state, host)
+	if err != nil {
+		return session.Session{}, err
 	}
 	for _, name := range []string{cookieAccess, cookieRefresh, cookieSession} {
 		if found[name] == "" {
@@ -109,37 +64,29 @@ func SessionFromBrowser(state []byte) (session.Session, error) {
 	}
 	return session.Session{
 		AccessToken:   found[cookieAccess],
-		AccessExpires: tokenExpiry(found[cookieAccess]),
-		RefreshToken:  packRefresh(found[cookieRefresh], found[cookieSession]),
+		AccessExpires: session.JWTExpiry(found[cookieAccess]),
+		RefreshToken:  found[cookieRefresh],
+		Extra:         map[string]string{ExtraSessionID: found[cookieSession]},
 	}, nil
 }
 
-// cookieCatcher is a cookie jar that keeps what one answer set and sends
-// nothing. The client writes its own Cookie header.
-type cookieCatcher map[string]string
-
-func (j cookieCatcher) SetCookies(_ *url.URL, cookies []*http.Cookie) {
-	for _, cookie := range cookies {
-		j[cookie.Name] = cookie.Value
-	}
-}
-
-func (cookieCatcher) Cookies(*url.URL) []*http.Cookie { return nil }
-
 // RenewSession trades the refresh token for a new access token. The service
-// has no request for this alone: any request that carries the refresh token
-// and an access token that has run out is answered with new cookies.
-func (c *Client) RenewSession(ctx context.Context, packed string) (session.Session, error) {
-	refresh, sessionID := SplitRefresh(packed)
+// has no request for this alone: any request that carries the session id and
+// the refresh token is answered with new cookies.
+func (c *Client) RenewSession(ctx context.Context, stored session.Session) (session.Session, error) {
+	sessionID := stored.Extra[ExtraSessionID]
+	if sessionID == "" {
+		return session.Session{}, ctlkit.Authf("the stored login has no session id")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/v1/session", nil)
 	if err != nil {
 		return session.Session{}, err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Requested-By", "XMLHttpRequest")
-	addCookies(req, map[string]string{cookieSession: sessionID, cookieRefresh: refresh, cookieAccess: c.Token})
+	addCookies(req, map[string]string{cookieSession: sessionID, cookieRefresh: stored.RefreshToken, cookieAccess: stored.AccessToken})
 
-	caught := cookieCatcher{}
+	caught := httpx.CookieCatcher{}
 	client := *c.HTTP
 	client.Jar = caught
 	if _, err := httpx.Do(&client, req, service, c.UserAgent); err != nil {
@@ -148,13 +95,13 @@ func (c *Client) RenewSession(ctx context.Context, packed string) (session.Sessi
 	access := caught[cookieAccess]
 	if access == "" {
 		// The access token it was sent still worked, so none was handed out.
-		access = c.Token
+		access = stored.AccessToken
 	}
-	renewed := session.Session{AccessToken: access, AccessExpires: tokenExpiry(access)}
-	if caught[cookieRefresh] != "" {
-		renewed.RefreshToken = packRefresh(caught[cookieRefresh], sessionID)
-	}
-	return renewed, nil
+	return session.Session{
+		AccessToken:   access,
+		AccessExpires: session.JWTExpiry(access),
+		RefreshToken:  caught[cookieRefresh],
+	}, nil
 }
 
 func addCookies(req *http.Request, cookies map[string]string) {

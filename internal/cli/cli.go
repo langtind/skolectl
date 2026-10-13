@@ -21,10 +21,21 @@ const (
 
 	summary = "read and answer what a school sends guardians through Visma Flyt Skole"
 
-	// loginSteps is the hint of every error that only a new login mends.
-	// ID-porten needs a person, so the login is made in a browser and
-	// handed over.
-	loginSteps = `a person has to log in with ID-porten in a browser. Run "playwright-cli open https://foresatt.visma.no/<school-key> --headed", let the person log in, then "playwright-cli state-save state.json", then "` + Name + ` login --state-stdin < state.json", and delete state.json.`
+	// loginHint is the hint of every error that only a new login mends.
+	loginHint = `a person has to log in with ID-porten in a browser. Run "` + Name + ` help login" for the steps.`
+
+	// loginSteps is the long help of login. ID-porten needs a person, so
+	// the login is made in a browser and handed over.
+	loginSteps = `Visma Flyt Skole logs in with ID-porten (BankID), so a person has to log in, in a browser. The tool then takes over that login and renews it itself.
+
+  playwright-cli open https://foresatt.visma.no/<school-key> --headed
+  (the person logs in, and waits for the page that shows the children)
+  playwright-cli state-save state.json
+  ` + Name + ` login --state-stdin < state.json
+  rm state.json
+  playwright-cli close
+
+<school-key> is the last part of the address the school gave the guardians. state.json holds the login: never print it, and delete it straight away.`
 
 	// renewMargin is how long before the access token runs out it is
 	// renewed. The token lasts five minutes, so the margin has to be short.
@@ -60,7 +71,7 @@ func (a *App) program(build ctlkit.Build, skill fs.FS) *ctlkit.Program {
 	p.Commands = a.commands()
 	p.Hint = hint
 	a.Client.UserAgent = p.UserAgent()
-	a.Session.Renew = a.Client.RenewSession
+	a.Session.RenewFrom = a.Client.RenewSession
 	a.Session.Now = a.Now
 	a.Session.Margin = renewMargin
 	return p
@@ -69,7 +80,7 @@ func (a *App) program(build ctlkit.Build, skill fs.FS) *ctlkit.Program {
 // hint says what to do about an error that cannot say it itself.
 func hint(err error) string {
 	if ctlkit.KindOf(err) == ctlkit.KindAuth {
-		return loginSteps
+		return loginHint
 	}
 	return ""
 }
@@ -77,7 +88,7 @@ func hint(err error) string {
 // loginError adds what to do to an error from the session.
 func loginError(err error) error {
 	if errors.Is(err, session.ErrNotLoggedIn) || errors.Is(err, session.ErrExpired) {
-		return ctlkit.Authf("%w", err).WithHint("%s", loginSteps)
+		return ctlkit.Authf("%w", err).WithHint("%s", loginHint)
 	}
 	return err
 }
@@ -90,8 +101,9 @@ func (a *App) authorize(ctx context.Context) error {
 	if err != nil {
 		return loginError(err)
 	}
-	_, a.Client.SessionID = flyt.SplitRefresh(login.RefreshToken)
-	a.Client.Token = login.AccessToken
+	// A login without a session id cannot send a request. Renewing it
+	// fails with the error that says to log in again.
+	a.Client.SessionID = login.Extra[flyt.ExtraSessionID]
 	token, err := a.Session.Token(ctx)
 	if err != nil {
 		return loginError(err)
