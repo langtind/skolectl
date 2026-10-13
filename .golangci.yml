@@ -1,0 +1,17 @@
+version: "2"
+
+linters:
+  default: standard
+  exclusions:
+    presets:
+      # Printing to a writer and closing a file that was only read cannot
+      # fail in a way a caller could act on.
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
