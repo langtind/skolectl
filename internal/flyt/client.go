@@ -72,7 +72,8 @@ func SessionFromBrowser(state []byte) (session.Session, error) {
 
 // RenewSession trades the refresh token for a new access token. The service
 // has no request for this alone: any request that carries the session id and
-// the refresh token is answered with new cookies.
+// the refresh token is answered with new cookies. The access token is left
+// out: sent one that still works, the service hands out no new one.
 func (c *Client) RenewSession(ctx context.Context, stored session.Session) (session.Session, error) {
 	sessionID := stored.Extra[ExtraSessionID]
 	if sessionID == "" {
@@ -84,7 +85,7 @@ func (c *Client) RenewSession(ctx context.Context, stored session.Session) (sess
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Requested-By", "XMLHttpRequest")
-	addCookies(req, map[string]string{cookieSession: sessionID, cookieRefresh: stored.RefreshToken, cookieAccess: stored.AccessToken})
+	addCookies(req, map[string]string{cookieSession: sessionID, cookieRefresh: stored.RefreshToken})
 
 	caught := httpx.CookieCatcher{}
 	client := *c.HTTP
@@ -94,8 +95,7 @@ func (c *Client) RenewSession(ctx context.Context, stored session.Session) (sess
 	}
 	access := caught[cookieAccess]
 	if access == "" {
-		// The access token it was sent still worked, so none was handed out.
-		access = stored.AccessToken
+		return session.Session{}, fmt.Errorf("%s: the answer set no %s cookie", service, cookieAccess)
 	}
 	return session.Session{
 		AccessToken:   access,

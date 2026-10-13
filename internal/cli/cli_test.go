@@ -578,7 +578,7 @@ func TestAnAccessTokenAboutToRunOutIsRenewedFirst(t *testing.T) {
 	h := newHarness(t)
 	h.login(10 * time.Second)
 	code, _, stderr := h.run("", "children")
-	if code != 0 || h.sent() != "GET /v1/session, GET /v2/children" || h.calls[0].Refresh != "refresh-1" || h.calls[1].Access != renewedAccess || h.calls[1].Refresh != "" {
+	if code != 0 || h.sent() != "GET /v1/session, GET /v2/children" || h.calls[0].Refresh != "refresh-1" || h.calls[0].Access != "" || h.calls[1].Access != renewedAccess || h.calls[1].Refresh != "" {
 		t.Fatalf("exit = %d, stderr = %q, sent = %s, calls = %+v", code, stderr, h.sent(), h.calls)
 	}
 	if got := h.stored(); got.AccessToken != renewedAccess || got.RefreshToken != "refresh-1" || got.Extra[flyt.ExtraSessionID] != "session-1" {
