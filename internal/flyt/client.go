@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 
 	"github.com/langtind/ctlkit"
 	"github.com/langtind/ctlkit/httpx"
@@ -113,8 +115,12 @@ func addCookies(req *http.Request, cookies map[string]string) {
 }
 
 // formRequest is a body the service takes as a multipart form with the JSON
-// in the field "request". Every request that sends a message has this form.
-type formRequest struct{ Request any }
+// in the field "request", and any files in the field "attachments". Every
+// request that sends a message or an application has this form.
+type formRequest struct {
+	Request any
+	Files   []FormFile
+}
 
 // do sends one request with the login and decodes a 2xx answer into into.
 // Any other status comes back as an error with a kind, see httpx.Do. When
@@ -161,6 +167,18 @@ func (c *Client) send(ctx context.Context, method, path string, body any) ([]byt
 		form := multipart.NewWriter(payload)
 		if err := form.WriteField("request", string(data)); err != nil {
 			return nil, err
+		}
+		for _, file := range body.Files {
+			header := textproto.MIMEHeader{}
+			header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": "attachments", "filename": file.Name}))
+			header.Set("Content-Type", file.ContentType)
+			part, err := form.CreatePart(header)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := part.Write(file.Data); err != nil {
+				return nil, err
+			}
 		}
 		if err := form.Close(); err != nil {
 			return nil, err

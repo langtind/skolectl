@@ -32,10 +32,11 @@ $ skolectl overview
 | Absence | `absences` | Absence days, with a summary for the term or the year | |
 | Forms and consents | `forms`, `form`, `consents` | What the school asks, and what was answered | |
 | Applications | `applications`, `application` | Leave and other applications, with the answer | |
+| | `leave-options`, `apply-leave` | What the school asks of an application for leave | An application for leave, with files |
 | Class and school | `classes`, `schools` | Teachers for each subject, and how to reach the school | |
 | Documents | `documents`, `document` | Files about the child, and files the school shares | |
 
-What it does not do yet: start a new message thread, answer a form or a consent, report absence, or apply for leave. Use the portal for those.
+What it does not do yet: start a new message thread, answer a form or a consent, or report absence. Use the portal for those.
 
 A school chooses which areas to turn on. An area the school does not use comes back empty.
 
@@ -108,6 +109,18 @@ skolectl mark-read <thread-id>
 ```
 
 A reply goes out under your name and cannot be taken back. A read mark is visible to the school. Both commands ask before they send, show what they would do with `--dry-run`, and skip the question with `--yes`.
+
+### Applying for leave
+
+```bash
+skolectl leave-options                 # the causes, what is required, and the limits
+skolectl apply-leave <pupil-id> --from 2026-11-05 --reason "Choir trip." --attach letter.pdf --dry-run
+skolectl apply-leave <pupil-id> --from 2026-11-05 --reason "Choir trip." --attach letter.pdf
+```
+
+`--dry-run` checks everything and shows the whole application without sending it. The real run asks first, sends, and prints the id the school gave the application.
+
+The service cannot tell a second try from a new application, so skolectl is careful: it refuses when the child already has an application for the same days, it never sends twice, and when a send gets no clear answer it says so instead of trying again.
 
 ## For agents
 

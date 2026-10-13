@@ -32,6 +32,9 @@ type call struct {
 	Session string
 	// Form is the "request" field of a multipart form.
 	Form string
+	// Files lists the "attachments" of a multipart form, each as
+	// "name type bytes".
+	Files []string
 }
 
 // harness runs skolectl against a fake Visma Flyt Skole, with the login in memory.
@@ -106,6 +109,9 @@ var fixtures = map[string]string{
 	"GET " + pupil + "/messages/group/c1": `{"conversationId":"c1","title":"Class 3A","isReadonly":false,"participants":["Anne Lie","Kari Nordmann"],"messages":[
 		{"sentOn":"2026-10-05T09:00:00.00","sentBy":"Anne Lie","message":"Welcome back","sentByMe":false,"attachments":[{"attachmentId":"a1","fileName":"../plan.pdf","contentType":"application/pdf","contentLength":9}]}]}`,
 	"GET " + pupil + "/messages/group/c1/attachment/a1":   "%PDF-1.4\n",
+	"GET /vfs/v1/schools/sch-1/applicationTypes/1":        `{"name":"Leave","type":1,"hasRulesDocument":false,"template":{"applicationInfoText":"Pick the cause that fits.\n# not a heading","archiveText":"Kept for five years."}}`,
+	"GET /vfs/v1/schools/sch-1/applicationTypes/1/causes": `[{"id":4,"name":"Family","isDefault":false,"onlyForLevelZero":false},{"id":5,"name":"Other","isDefault":true,"onlyForLevelZero":false}]`,
+	"POST /vfs/v1/schools/sch-1/applications":             ``,
 	"POST " + pupil + "/messages/direct/32/reply":         ``,
 	"POST " + pupil + "/messages/group/c1/reply":          ``,
 	"POST " + pupil + "/messages/direct/32/mark-as-read":  ``,
@@ -181,6 +187,9 @@ func (h *harness) run(stdin string, args ...string) (code int, stdout, stderr st
 		}
 		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 			c.Form = r.FormValue("request")
+			for _, file := range r.MultipartForm.File["attachments"] {
+				c.Files = append(c.Files, fmt.Sprintf("%s %s %d", file.Filename, file.Header.Get("Content-Type"), file.Size))
+			}
 		} else {
 			_, _ = io.Copy(io.Discard, r.Body)
 		}
@@ -646,5 +655,194 @@ func TestATimeWithoutAZoneIsReadAsOsloTime(t *testing.T) {
 	_ = json.Unmarshal([]byte(`"2026-07-15T08:00:00"`), &summer)
 	if winter.Format(time.RFC3339) != "2026-01-15T08:00:00+01:00" || summer.Format(time.RFC3339) != "2026-07-15T08:00:00+02:00" {
 		t.Errorf("winter = %s, summer = %s", winter.Format(time.RFC3339), summer.Format(time.RFC3339))
+	}
+}
+
+func TestLeaveOptionsListTheCausesAndTheLimits(t *testing.T) {
+	h := newHarness(t)
+	code, stdout, _ := h.run("", "leave-options", "--json")
+	var list leaveOptionList
+	ctltest.OneJSON(t, stdout, &list)
+	if code != 0 || len(list.Items) != 1 {
+		t.Fatalf("exit = %d, list = %+v", code, list)
+	}
+	got := list.Items[0]
+	if got.PupilID != 7 || len(got.Causes) != 2 || got.Causes[1] != (leaveCause{ID: 5, Name: "Other", Default: true}) || got.MustAgreeToRules || got.Limits.MaxAttachments != 3 || got.Limits.MaxDays != 60 {
+		t.Errorf("option = %+v", got)
+	}
+	_, stdout, _ = h.run("", "leave-options")
+	if !strings.Contains(stdout, "- Other (default), cause id: 5\n") || !strings.Contains(stdout, "> # not a heading\n") {
+		t.Errorf("stdout = %q", stdout)
+	}
+}
+
+// leaveHarness serves a school that registers an application when it is
+// sent one, as number 11.
+func leaveHarness(t *testing.T, sendStatus int, registers bool) *harness {
+	h := newHarness(t)
+	sent := false
+	normal := h.answer
+	h.answer = func(c call) (int, string) {
+		switch {
+		case c.Method == http.MethodPost && c.Path == "/vfs/v1/schools/sch-1/applications":
+			sent = registers
+			return sendStatus, ``
+		case sent && c.Path == pupil+"/applications":
+			return http.StatusOK, `[{"requestId":11,"createdDate":"2026-10-12T15:00:01.000","status":1,"applicationType":1},{"requestId":9,"createdDate":"2026-09-10T12:00:00.000","status":4,"applicationType":1}]`
+		case sent && c.Path == pupil+"/applications/11":
+			return http.StatusOK, `{"requestId":11,"status":1,"applicationType":1,"fromDate":"2026-11-05T00:00:00","toDate":"2026-11-05T00:00:00"}`
+		case c.Path == pupil+"/applications/10":
+			return http.StatusOK, `{"requestId":10,"status":1,"applicationType":1,"fromDate":"2026-10-20T00:00:00","toDate":"2026-10-21T00:00:00"}`
+		}
+		return normal(c)
+	}
+	return h
+}
+
+func posts(h *harness) int {
+	count := 0
+	for _, c := range h.calls {
+		if c.Method == http.MethodPost {
+			count++
+		}
+	}
+	return count
+}
+
+func letter(t *testing.T, name string, data []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestApplyLeaveShowsTheWholeApplicationOnADryRunAndSendsNothing(t *testing.T) {
+	h := leaveHarness(t, http.StatusOK, true)
+	pdf := letter(t, "choir.pdf", []byte("%PDF-1.4\nletter"))
+	code, stdout, stderr := h.run("", "apply-leave", "7", "--from", "2026-11-05", "--reason", "Choir trip\n# not a heading", "--attach", pdf, "--dry-run")
+	want := "Dry run. This application for leave would be sent. Nothing was sent.\n\n" +
+		"Child: Ola Nordmann\nSchool: Fjellvik skole\nCause: Other\nFrom: 2026-11-05\nTo: 2026-11-05\nDays: 1\n\n" +
+		"Reason:\n\n> Choir trip\n> # not a heading\n\nFiles:\n\n- choir.pdf (15 bytes, application/pdf)\n"
+	if code != 0 || stdout != want || posts(h) != 0 {
+		t.Errorf("exit = %d, posts = %d, stderr = %q, stdout = %q", code, posts(h), stderr, stdout)
+	}
+}
+
+func TestApplyLeaveNeedsAYesThenSendsAndLooksTheApplicationUp(t *testing.T) {
+	h := leaveHarness(t, http.StatusOK, true)
+	pdf := letter(t, "choir.pdf", []byte("%PDF-1.4\nletter"))
+	args := []string{"apply-leave", "7", "--from", "2026-11-05", "--cause", "4", "--reason", "Choir trip", "--attach", pdf}
+	code, _, stderr := h.run("", args...)
+	if code != 2 || !strings.Contains(stderr, "refusing without confirmation: Send this application for leave to Fjellvik skole?") || !strings.Contains(stderr, "Cause: Family") || posts(h) != 0 {
+		t.Errorf("without --yes: exit = %d, posts = %d, stderr = %q", code, posts(h), stderr)
+	}
+
+	code, stdout, stderr := h.run("", append(args, "--yes", "--json")...)
+	var result leaveResult
+	ctltest.OneJSON(t, stdout, &result)
+	if code != 0 || !result.Sent || !result.Verified || result.ApplicationID != "7.11" || result.DryRun {
+		t.Fatalf("exit = %d, result = %+v, stderr = %q", code, result, stderr)
+	}
+	var sent call
+	for _, c := range h.calls {
+		if c.Method == http.MethodPost {
+			sent = c
+		}
+	}
+	wantForm := `{"applicationType":1,"comment":"Choir trip","applicationTypeCauseId":4,"fromDate":"2026-11-05T00:00:00","toDate":"2026-11-05T00:00:00","hasReadRules":null,"pupilInYearIds":[7]}`
+	if posts(h) != 1 || sent.Path != "/vfs/v1/schools/sch-1/applications" || sent.Form != wantForm || fmt.Sprint(sent.Files) != "[choir.pdf application/pdf 15]" {
+		t.Errorf("posts = %d, sent = %+v", posts(h), sent)
+	}
+}
+
+func TestApplyLeaveRefusesASecondApplicationForTheSameDays(t *testing.T) {
+	h := leaveHarness(t, http.StatusOK, true)
+	code, _, stderr := h.run("", "apply-leave", "7", "--from", "2026-10-20", "--to", "2026-10-21", "--reason", "Trip", "--yes")
+	if code != 5 || !strings.Contains(stderr, "already has an application for leave from 2026-10-20 to 2026-10-21: 7.10") || posts(h) != 0 {
+		t.Errorf("exit = %d, posts = %d, stderr = %q", code, posts(h), stderr)
+	}
+}
+
+func TestApplyLeaveSettlesASendThatGotNoClearAnswer(t *testing.T) {
+	// The service failed, but it has the application: that is a success.
+	h := leaveHarness(t, http.StatusBadGateway, true)
+	code, stdout, stderr := h.run("", "apply-leave", "7", "--from", "2026-11-05", "--reason", "Choir trip", "--yes")
+	if code != 0 || !strings.HasPrefix(stdout, "Sent, and the school has it as application 7.11.\n") || posts(h) != 1 {
+		t.Errorf("registered: exit = %d, posts = %d, stdout = %q, stderr = %q", code, posts(h), stdout, stderr)
+	}
+
+	// The service failed and has nothing: say so, and do not try again.
+	h = leaveHarness(t, http.StatusBadGateway, false)
+	code, stdout, stderr = h.run("", "apply-leave", "7", "--from", "2026-11-05", "--reason", "Choir trip", "--yes")
+	if code != 7 || stdout != "" || !strings.Contains(stderr, "it is not known whether the application was sent") || !strings.Contains(stderr, "do not send it again before you have looked") || posts(h) != 1 {
+		t.Errorf("not registered: exit = %d, posts = %d, stdout = %q, stderr = %q", code, posts(h), stdout, stderr)
+	}
+
+	// A clear no is passed on as it is, and nothing is looked up.
+	h = leaveHarness(t, http.StatusBadRequest, false)
+	code, _, stderr = h.run("", "apply-leave", "7", "--from", "2026-11-05", "--reason", "Choir trip", "--yes")
+	if code == 0 || strings.Contains(stderr, "not known") || h.calls[len(h.calls)-1].Method != http.MethodPost {
+		t.Errorf("refused: exit = %d, stderr = %q, sent = %s", code, stderr, h.sent())
+	}
+}
+
+func TestApplyLeaveChecksTheApplicationBeforeItCallsTheService(t *testing.T) {
+	h := leaveHarness(t, http.StatusOK, true)
+	big := letter(t, "big.pdf", append([]byte("%PDF-1.4\n"), make([]byte, 5*1024*1024)...))
+	text := letter(t, "note.txt", []byte("just text"))
+	pdf := letter(t, "ok.pdf", []byte("%PDF-1.4\n"))
+	for name, test := range map[string]struct {
+		args []string
+		want string
+	}{
+		"no from":      {[]string{"--reason", "Trip"}, "--from is required"},
+		"not a date":   {[]string{"--from", "5 November", "--reason", "Trip"}, "is not a date"},
+		"in the past":  {[]string{"--from", "2026-10-11", "--reason", "Trip"}, "is in the past"},
+		"to first":     {[]string{"--from", "2026-11-05", "--to", "2026-11-04", "--reason", "Trip"}, "is before --from"},
+		"too long":     {[]string{"--from", "2026-11-05", "--to", "2027-01-05", "--reason", "Trip"}, "longer than the 60 days"},
+		"no reason":    {[]string{"--from", "2026-11-05", "--reason", "  "}, "--reason is required"},
+		"long reason":  {[]string{"--from", "2026-11-05", "--reason", strings.Repeat("å", 2001)}, "2001 characters"},
+		"big file":     {[]string{"--from", "2026-11-05", "--reason", "Trip", "--attach", big}, "at most 5242880 bytes"},
+		"wrong type":   {[]string{"--from", "2026-11-05", "--reason", "Trip", "--attach", text}, "has to be a PDF, a PNG or a JPEG"},
+		"missing file": {[]string{"--from", "2026-11-05", "--reason", "Trip", "--attach", "/no/such.pdf"}, "cannot read the file"},
+		"four files":   {[]string{"--from", "2026-11-05", "--reason", "Trip", "--attach", pdf + "," + letter(t, "b.pdf", nil) + "," + letter(t, "c.pdf", nil) + "," + letter(t, "d.pdf", nil)}, "at most 3 files"},
+	} {
+		code, _, stderr := h.run("", append([]string{"apply-leave", "7", "--yes"}, test.args...)...)
+		if code != 2 || !strings.Contains(stderr, test.want) || len(h.calls) != 0 {
+			t.Errorf("%s: exit = %d, calls = %d, stderr = %q", name, code, len(h.calls), stderr)
+		}
+	}
+	if code, _, stderr := h.run("", "apply-leave", "7", "--from", "2026-11-05", "--reason", "Trip", "--cause", "99", "--yes"); code != 2 || !strings.Contains(stderr, "no cause of leave with id 99") || posts(h) != 0 {
+		t.Errorf("unknown cause: exit = %d, stderr = %q", code, stderr)
+	}
+	if code, _, stderr := h.run("", "apply-leave", "8", "--from", "2026-11-05", "--reason", "Trip", "--yes"); code != 3 || !strings.Contains(stderr, "no child with pupil id 8") || posts(h) != 0 {
+		t.Errorf("unknown child: exit = %d, stderr = %q", code, stderr)
+	}
+}
+
+func TestApplyLeaveAsksToConfirmTheRulesWhereTheSchoolHasSome(t *testing.T) {
+	h := leaveHarness(t, http.StatusOK, true)
+	normal := h.answer
+	h.answer = func(c call) (int, string) {
+		if c.Path == "/vfs/v1/schools/sch-1/applicationTypes/1" {
+			return http.StatusOK, `{"name":"Leave","type":1,"hasRulesDocument":true,"template":{}}`
+		}
+		return normal(c)
+	}
+	args := []string{"apply-leave", "7", "--from", "2026-11-05", "--reason", "Trip", "--yes"}
+	if code, _, stderr := h.run("", args...); code != 2 || !strings.Contains(stderr, "has rules for leave") || posts(h) != 0 {
+		t.Errorf("without --agree-rules: exit = %d, stderr = %q", code, stderr)
+	}
+	code, stdout, _ := h.run("", append(args, "--agree-rules")...)
+	sent := ""
+	for _, c := range h.calls {
+		if c.Method == http.MethodPost {
+			sent = c.Form
+		}
+	}
+	if code != 0 || !strings.Contains(sent, `"hasReadRules":true`) || !strings.Contains(stdout, "confirms having read the school's rules") {
+		t.Errorf("with --agree-rules: exit = %d, sent = %q, stdout = %q", code, sent, stdout)
 	}
 }

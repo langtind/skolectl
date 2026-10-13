@@ -169,13 +169,13 @@ type ReplyRequest struct {
 // ReplyDirect sends a message to the employee of a direct thread. Running
 // it again sends one more message.
 func (c *Client) ReplyDirect(ctx context.Context, pupil, employee int, request ReplyRequest) error {
-	return c.do(ctx, http.MethodPost, pupilPath(pupil, fmt.Sprintf("direct/%d/reply", employee)), formRequest{request}, nil)
+	return c.do(ctx, http.MethodPost, pupilPath(pupil, fmt.Sprintf("direct/%d/reply", employee)), formRequest{Request: request}, nil)
 }
 
 // ReplyGroup sends a message to a group conversation. Running it again
 // sends one more message.
 func (c *Client) ReplyGroup(ctx context.Context, pupil int, conversation string, request ReplyRequest) error {
-	return c.do(ctx, http.MethodPost, pupilPath(pupil, "group/"+conversation+"/reply"), formRequest{request}, nil)
+	return c.do(ctx, http.MethodPost, pupilPath(pupil, "group/"+conversation+"/reply"), formRequest{Request: request}, nil)
 }
 
 // MarkDirectRead marks every message from one employee as read. The

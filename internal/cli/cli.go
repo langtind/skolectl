@@ -37,6 +37,13 @@ const (
 
 <school-key> is the last part of the address the school gave the guardians. state.json holds the login: never print it, and delete it straight away.`
 
+	// applyLeaveHelp is the long help of apply-leave.
+	applyLeaveHelp = `The application goes to the school under the guardian's name and cannot be taken back from here. Run it with --dry-run first: that checks everything and shows the whole application, and sends nothing.
+
+One day of leave takes --from alone. The cause is the school's default unless --cause names another. "` + Name + ` leave-options" lists the causes and says what the school requires.
+
+The service cannot tell a second try from a new application. So the command looks for an application with the same days before it sends, and refuses when there is one. After sending it looks the application up and prints its id. When sending fails without an answer, it says so: look with "` + Name + ` applications" before trying again.`
+
 	// renewMargin is how long before the access token runs out it is
 	// renewed. The token lasts five minutes, so the margin has to be short.
 	renewMargin = 30 * time.Second

@@ -2,7 +2,7 @@
 
 The Visma Flyt Skole guardian API as it was observed. The client in `internal/flyt` is written from this directory and never from a guess.
 
-Guardians use the web client at `https://foresatt.visma.no/<customerKey>` and the phone app Flyt Foresatt. Both talk to `https://api.foresatt.visma.no/`. There is no public documentation, and no open client was found on GitHub (2026-10-12).
+Guardians use the web client at `https://foresatt.visma.no/<customerKey>` and the phone app Flyt Foresatt. The school's own login page, `https://skole.visma.no/<customerKey>/Account/Login`, is for employees. Its link "Foresattportal" leads to `https://foresatt.visma.no/login/<customerKey>`, so it is the same service and the same login (checked 2026-10-13). The older `https://skole.visma.com/<customerKey>` only says that the portal has moved. Both talk to `https://api.foresatt.visma.no/`. There is no public documentation, and no open client was found on GitHub (2026-10-12).
 
 ## Verified
 
@@ -99,6 +99,10 @@ The rest, all under `/vfs/v1/pupils/<pupil>/` unless a full path is given:
 | `GET applications` | `requestId`, `createdDate`, `answeredBy`, `answeredTime`, `status`, `applicationType` |
 | `GET applications/<request>` | The same and `requestedBy`, `fromDate`, `toDate`, `causeName`, `parentComment`, `employeeComment`, `caseWorkers[]`, `isReadByApplicant`, `hasAnswerDocument`, `hasApplicationDocument` |
 | `GET applicationTypes` | A list of `{type, name}` |
+| `GET /vfs/v1/schools/<school>/applicationTypes` | A list of `{type, name}`: the types this school takes |
+| `GET /vfs/v1/schools/<school>/applicationTypes/<type>` | `name`, `type`, `hasRulesDocument`, `template{applicationInfoText, archiveText}`. Both texts are plain text with line breaks |
+| `GET /vfs/v1/schools/<school>/applicationTypes/<type>/causes` | A list of `{id, name, isDefault, onlyForLevelZero}` |
+| `GET applications/type/<type>` | The same rows as `applications`, for one type |
 | `GET groups` | `contactTeacher{fullName}`, `classGroup{name, level, responsibles[]}`, `subjectGroups[{subject{name}, name, responsibles[]}]`, `mixedGroups[]`, `sfoGroups[]` |
 | `GET pupil-info` | The child's national identity number, address and parents. Not used |
 | `GET documents/years` | `schoolYearId`, `fromYear`, `toYear`, `isCurrent` |
@@ -128,7 +132,23 @@ From the bundle at `https://foresatt.visma.no/`, version `2026.10.101.184`. This
 | `GET .../messages/direct/<employee>/attachment/<id>` | Not built: no direct message with a file was seen, so the name of the id is not known |
 | `POST .../notifications/mark-as-read/<id>` | Not built |
 | `POST .../consents`, `POST .../digital-forms/<form>/submit-answer` | Not built |
+| `POST /vfs/v1/schools/<school>/applications` | An application. Multipart form: the field `request` holds the JSON below, and each file is a field `attachments`. What the service answers is not known |
+| `GET /vfs/v1/schools/<school>/applicationTypes/<type>/rulesDocument` | The school's rules for one type, as a file. Not built |
+| `GET applications/<request>/attachment`, `.../answer-document`, `.../application-document` | Files on an application. Not built |
 | `GET /v1/session/signOut?returnUrl=` | Log out. The browser is sent there. Not used: `logout` only forgets the login |
+
+An application for leave, as the web client builds it:
+
+```json
+{"applicationType": 1, "comment": "<reason>", "applicationTypeCauseId": 5, "fromDate": "2026-11-05T00:00:00", "toDate": "2026-11-05T00:00:00", "hasReadRules": null, "pupilInYearIds": [1001]}
+```
+
+- `pupilInYearIds` holds the pupil id of the child, and of any sibling the guardian ticked. skolectl sends one child.
+- `hasReadRules` is `true` when the school has a rules document and the guardian ticked the box. Without a rules document the box is disabled and the value is `null`.
+- Dates are written as `YYYY-MM-DDTHH:mm:ss`.
+- What the form checks before it sends: a cause is picked, the first day is today or later, the last day is the first day or later and at most 60 days after it, and the reason is filled in and at most 2000 characters.
+- Files: at most 3, each at most 5 MB, and `.pdf`, `.png`, `.jpg` or `.jpeg`, checked by the MIME type the browser gives the file.
+- There is no draft step and no key that tells a second try from a new application. The form only blocks its own button while the request runs. So skolectl looks for an application with the same days before it sends, and looks the application up afterwards.
 
 The web client logs out after a time with no mouse or keyboard activity. That is a timer in the browser, and nothing the API asks for.
 
@@ -137,5 +157,7 @@ The web client logs out after a time with no mouse or keyboard activity. That is
 - That times without a zone are Oslo time.
 - How long the refresh token lasts. It renewed after 11 hours with no request in between (2026-10-13). Read `skolectl status` some days after a login to find the limit.
 - What an hour absence looks like: `type` other than 1, and any fields a day absence lacks.
+- Everything about sending an application: no application has been sent by skolectl. Whether the service checks the same limits as the form, what it answers, and how soon the application shows in `applications`.
+- Whether `pupilInYearIds` takes the pupil id that `/v2/children` gives. The web client passes that id.
 - What sending the same reply twice does. The code assumes it sends two messages.
 - Whether the phone app logs in another way, with a refresh token of its own.
