@@ -4,8 +4,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/godbus/dbus/v5 v5.2.2 h1:TUR3TgtSVDmjiXOgAAyaZbYmIeP3DPkld3jgKGV8mXQ=
 github.com/godbus/dbus/v5 v5.2.2/go.mod h1:3AAv2+hPq5rdnr5txxxRwiGjPXamgoIHgz9FPBfOp3c=
-github.com/langtind/ctlkit v0.3.0 h1:xuJ1AjyHuiaRAnQ84ksHp5wxAsA9vqCi3I5aJ7M2lr8=
-github.com/langtind/ctlkit v0.3.0/go.mod h1:ZzGIJEPAEeYVWvTACxOt1bJn2/WdXwAbn2rUbCbolLk=
+github.com/langtind/ctlkit v0.4.0 h1:ZOnl3Mxg4KVNqzW3IspAT3NULCMuc18Ojl0PsHtDxg4=
+github.com/langtind/ctlkit v0.4.0/go.mod h1:ZzGIJEPAEeYVWvTACxOt1bJn2/WdXwAbn2rUbCbolLk=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.5.2 h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=

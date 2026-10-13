@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/langtind/ctlkit/httpx"
 )
 
 // LeaveType is the application type for leave, see ApplicationTypes.
@@ -79,18 +81,11 @@ type LeaveRequest struct {
 // LeaveDate writes a day as the web client sends it.
 func LeaveDate(day time.Time) string { return day.Format("2006-01-02") + "T00:00:00" }
 
-// FormFile is a file sent along with a request.
-type FormFile struct {
-	Name        string
-	ContentType string
-	Data        []byte
-}
-
 // CreateApplication sends an application to a school. It is not safe to
 // run again: the service has no key that tells a second try from a new
 // application, so a caller that got no answer looks the application up
 // before it sends once more.
-func (c *Client) CreateApplication(ctx context.Context, school string, request LeaveRequest, files []FormFile) error {
+func (c *Client) CreateApplication(ctx context.Context, school string, request LeaveRequest, files []httpx.FormFile) error {
 	_, err := c.fetch(ctx, http.MethodPost, fmt.Sprintf("vfs/v1/schools/%s/applications", school), formRequest{Request: request, Files: files})
 	return err
 }

@@ -2,7 +2,7 @@ module github.com/langtind/skolectl
 
 go 1.27.1
 
-require github.com/langtind/ctlkit v0.3.0
+require github.com/langtind/ctlkit v0.4.0
 
 require (
 	github.com/danieljoos/wincred v1.2.3 // indirect

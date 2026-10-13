@@ -95,7 +95,7 @@ skolectl apply-leave <pupil-id> --from 2026-11-05 --to 2026-11-06 --cause <cause
 3. Only after the user says yes to it, run the same command with `--yes` in place of `--dry-run`.
 4. The answer names the application: `Sent, and the school has it as application <id>`. `skolectl application <id>` shows it.
 
-One day takes `--from` alone. The leave can end at most 60 days after it starts. A file is a PDF, a PNG or a JPEG of at most 5 MB, and there can be 3. Where the school has rules for leave, the command asks for `--agree-rules`: pass it only when the user says they have read the rules.
+One day takes `--from` alone. The leave can end at most 60 days after it starts. A file is a PDF, a PNG or a JPEG of at most 5 MB, and there can be 3. Give `--attach` once for each file: the path is taken whole, so a comma in it is part of the name. Where the school has rules for leave, the command asks for `--agree-rules`: pass it only when the user says they have read the rules.
 
 The command refuses with `conflict` when the child already has an application for the same days. When sending fails with "it is not known whether the application was sent", do not run it again: run `skolectl applications` after a minute and look. Never send the same application twice.
 

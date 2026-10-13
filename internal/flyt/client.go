@@ -8,10 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"mime"
-	"mime/multipart"
 	"net/http"
-	"net/textproto"
 
 	"github.com/langtind/ctlkit"
 	"github.com/langtind/ctlkit/httpx"
@@ -119,7 +116,7 @@ func addCookies(req *http.Request, cookies map[string]string) {
 // request that sends a message or an application has this form.
 type formRequest struct {
 	Request any
-	Files   []FormFile
+	Files   []httpx.FormFile
 }
 
 // do sends one request with the login and decodes a 2xx answer into into.
@@ -160,30 +157,17 @@ func (c *Client) send(ctx context.Context, method, path string, body any) ([]byt
 	switch body := body.(type) {
 	case nil:
 	case formRequest:
-		data, err := json.Marshal(body.Request)
+		var form httpx.Form
+		form.JSON("request", body.Request)
+		for _, file := range body.Files {
+			form.File("attachments", file)
+		}
+		data, formType, err := form.Body()
 		if err != nil {
 			return nil, err
 		}
-		form := multipart.NewWriter(payload)
-		if err := form.WriteField("request", string(data)); err != nil {
-			return nil, err
-		}
-		for _, file := range body.Files {
-			header := textproto.MIMEHeader{}
-			header.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": "attachments", "filename": file.Name}))
-			header.Set("Content-Type", file.ContentType)
-			part, err := form.CreatePart(header)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := part.Write(file.Data); err != nil {
-				return nil, err
-			}
-		}
-		if err := form.Close(); err != nil {
-			return nil, err
-		}
-		contentType = form.FormDataContentType()
+		payload.Write(data)
+		contentType = formType
 	default:
 		data, err := json.Marshal(body)
 		if err != nil {

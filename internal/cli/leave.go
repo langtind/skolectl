@@ -142,11 +142,11 @@ func parseDay(flag, text string) (time.Time, error) {
 
 // readAttachments reads the files and checks them against what the portal
 // takes.
-func readAttachments(paths []string) ([]flyt.FormFile, error) {
+func readAttachments(paths []string) ([]httpx.FormFile, error) {
 	if len(paths) > flyt.MaxAttachments {
 		return nil, ctlkit.Usagef("an application takes at most %d files, and %d were given", flyt.MaxAttachments, len(paths))
 	}
-	files := []flyt.FormFile{}
+	files := []httpx.FormFile{}
 	for _, path := range paths {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -166,7 +166,7 @@ func readAttachments(paths []string) ([]flyt.FormFile, error) {
 		if !slices.Contains(flyt.AttachmentTypes, contentType) {
 			return nil, ctlkit.Usagef("%s holds %s, and a file has to be a PDF, a PNG or a JPEG", path, contentType)
 		}
-		files = append(files, flyt.FormFile{Name: filepath.Base(path), ContentType: contentType, Data: data})
+		files = append(files, httpx.FormFile{Name: filepath.Base(path), ContentType: contentType, Data: data})
 	}
 	return files, nil
 }

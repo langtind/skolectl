@@ -118,7 +118,7 @@ skolectl apply-leave <pupil-id> --from 2026-11-05 --reason "Choir trip." --attac
 skolectl apply-leave <pupil-id> --from 2026-11-05 --reason "Choir trip." --attach letter.pdf
 ```
 
-`--dry-run` checks everything and shows the whole application without sending it. The real run asks first, sends, and prints the id the school gave the application.
+`--dry-run` checks everything and shows the whole application without sending it. The real run asks first, sends, and prints the id the school gave the application. Give `--attach` once for each file, at most three.
 
 The service cannot tell a second try from a new application, so skolectl is careful: it refuses when the child already has an application for the same days, it never sends twice, and when a send gets no clear answer it says so instead of trying again.
 

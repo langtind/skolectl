@@ -807,7 +807,7 @@ func TestApplyLeaveChecksTheApplicationBeforeItCallsTheService(t *testing.T) {
 		"big file":     {[]string{"--from", "2026-11-05", "--reason", "Trip", "--attach", big}, "at most 5242880 bytes"},
 		"wrong type":   {[]string{"--from", "2026-11-05", "--reason", "Trip", "--attach", text}, "has to be a PDF, a PNG or a JPEG"},
 		"missing file": {[]string{"--from", "2026-11-05", "--reason", "Trip", "--attach", "/no/such.pdf"}, "cannot read the file"},
-		"four files":   {[]string{"--from", "2026-11-05", "--reason", "Trip", "--attach", pdf + "," + letter(t, "b.pdf", nil) + "," + letter(t, "c.pdf", nil) + "," + letter(t, "d.pdf", nil)}, "at most 3 files"},
+		"four files":   {[]string{"--from", "2026-11-05", "--reason", "Trip", "--attach", pdf, "--attach", letter(t, "b.pdf", nil), "--attach", letter(t, "c.pdf", nil), "--attach", letter(t, "d.pdf", nil)}, "at most 3 files"},
 	} {
 		code, _, stderr := h.run("", append([]string{"apply-leave", "7", "--yes"}, test.args...)...)
 		if code != 2 || !strings.Contains(stderr, test.want) || len(h.calls) != 0 {
@@ -844,5 +844,14 @@ func TestApplyLeaveAsksToConfirmTheRulesWhereTheSchoolHasSome(t *testing.T) {
 	}
 	if code != 0 || !strings.Contains(sent, `"hasReadRules":true`) || !strings.Contains(stdout, "confirms having read the school's rules") {
 		t.Errorf("with --agree-rules: exit = %d, sent = %q, stdout = %q", code, sent, stdout)
+	}
+}
+
+func TestApplyLeaveTakesAPathWithACommaWhole(t *testing.T) {
+	h := leaveHarness(t, http.StatusOK, true)
+	pdf := letter(t, "choir, autumn.pdf", []byte("%PDF-1.4\nletter"))
+	code, stdout, stderr := h.run("", "apply-leave", "7", "--from", "2026-11-05", "--reason", "Choir trip", "--attach", pdf, "--dry-run")
+	if code != 0 || !strings.Contains(stdout, "- choir, autumn.pdf (15 bytes, application/pdf)") || posts(h) != 0 {
+		t.Fatalf("exit = %d, posts = %d, stdout = %q, stderr = %q", code, posts(h), stdout, stderr)
 	}
 }

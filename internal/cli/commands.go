@@ -182,7 +182,7 @@ func (a *App) commands() []ctlkit.Command {
 				{Name: "to", Kind: ctlkit.String, Value: "yyyy-mm-dd", Help: "the last day of the leave, instead of the first day alone"},
 				{Name: "cause", Kind: ctlkit.Int, Value: "cause-id", Help: "the cause, by the id that leave-options prints, instead of the school's default"},
 				{Name: "reason", Kind: ctlkit.String, Value: "text", Help: "why the child needs leave, as the school will read it"},
-				{Name: "attach", Kind: ctlkit.List, Value: "path", Help: "files to send along: PDF, PNG or JPEG, at most 3 of at most 5 MB each"},
+				{Name: "attach", Kind: ctlkit.Repeat, Value: "path", Help: "files to send along: PDF, PNG or JPEG, at most 3 of at most 5 MB each"},
 				{Name: "agree-rules", Kind: ctlkit.Bool, Help: "confirm that the guardian has read the school's rules for leave, where the school has some"},
 				ctlkit.DryRunFlag, ctlkit.YesFlag, ctlkit.JSONFlag,
 			},
